@@ -1,0 +1,16 @@
+﻿{
+  "transactions": [
+    {
+      "transaction_id": "TX001",
+      "hash_key": "hash123",
+      "date": "2026-06-04T10:00:00",
+      "amount": 1500,
+      "transaction_type": "received",
+      "counterparty": "John Doe",
+      "description": "Payment for services",
+      "category": "Income",
+      "merchant": "Freelance Work",
+      "source": "mpesa"
+    }
+  ]
+}

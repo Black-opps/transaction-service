@@ -6,7 +6,7 @@ import logging
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
@@ -55,8 +55,16 @@ class TransactionService:
         self.db.refresh(db_transaction)
         return db_transaction
 
-    def create_transactions_batch(self, transactions: List[TransactionCreate]) -> Dict:
-        """Create multiple transactions, skipping duplicates and handling rollbacks"""
+    def create_transactions_batch(
+        self, transactions: List[Union[TransactionCreate, Dict[str, Any]]]
+    ) -> Dict:
+        """
+        Create multiple transactions, skipping duplicates and handling rollbacks.
+
+        Now accepts both TransactionCreate objects AND dictionaries.
+        This allows the deduplication function to return dicts while maintaining
+        compatibility with the batch endpoint.
+        """
         saved = 0
         duplicates = 0
         errors = 0
@@ -64,10 +72,34 @@ class TransactionService:
         # Process each transaction individually to avoid batch failures
         for tx_data in transactions:
             try:
+                # ✅ FIX: Convert dict to TransactionCreate if needed
+                if isinstance(tx_data, dict):
+                    # Convert dict to TransactionCreate
+                    tx_create = TransactionCreate(
+                        transaction_id=tx_data.get("transaction_id"),
+                        hash_key=tx_data.get("hash_key"),
+                        upload_file_id=tx_data.get("upload_file_id"),
+                        uploaded_by=tx_data.get("uploaded_by", self.tenant_id),
+                        parser_version=tx_data.get("parser_version", "1.0.0"),
+                        date=tx_data.get("date"),
+                        amount=tx_data.get("amount"),
+                        transaction_type=tx_data.get("transaction_type"),
+                        counterparty=tx_data.get("counterparty"),
+                        description=tx_data.get("description", ""),
+                        phone_number=tx_data.get("phone_number", ""),
+                        reference=tx_data.get("reference", ""),
+                        balance=tx_data.get("balance"),
+                        category=tx_data.get("category", "unknown"),
+                        merchant=tx_data.get("merchant"),
+                        source=tx_data.get("source", "mpesa"),
+                    )
+                else:
+                    tx_create = tx_data
+
                 # Check if transaction already exists
                 existing = (
                     self.db.query(Transaction)
-                    .filter(Transaction.transaction_id == tx_data.transaction_id)
+                    .filter(Transaction.transaction_id == tx_create.transaction_id)
                     .first()
                 )
 
@@ -78,19 +110,21 @@ class TransactionService:
                 # Create new transaction
                 transaction = Transaction(
                     id=str(uuid.uuid4()),
-                    transaction_id=tx_data.transaction_id,
-                    hash_key=tx_data.hash_key,
+                    transaction_id=tx_create.transaction_id,
+                    hash_key=tx_create.hash_key,
                     tenant_id=self.tenant_id,
-                    date=datetime.fromisoformat(tx_data.date),
-                    amount=Decimal(str(tx_data.amount)),
-                    transaction_type=tx_data.transaction_type,
-                    counterparty=tx_data.counterparty,
-                    description=tx_data.description or "",
-                    phone_number=tx_data.phone_number or "",
-                    reference=tx_data.reference or "",
-                    balance=Decimal(str(tx_data.balance)) if tx_data.balance else None,
-                    category=tx_data.category or "unknown",
-                    source=tx_data.source or "mpesa",
+                    date=datetime.fromisoformat(tx_create.date),
+                    amount=Decimal(str(tx_create.amount)),
+                    transaction_type=tx_create.transaction_type,
+                    counterparty=tx_create.counterparty,
+                    description=tx_create.description or "",
+                    phone_number=tx_create.phone_number or "",
+                    reference=tx_create.reference or "",
+                    balance=(
+                        Decimal(str(tx_create.balance)) if tx_create.balance else None
+                    ),
+                    category=tx_create.category or "unknown",
+                    source=tx_create.source or "mpesa",
                     created_at=datetime.utcnow(),
                 )
                 self.db.add(transaction)
@@ -102,7 +136,12 @@ class TransactionService:
 
             except Exception as e:
                 errors += 1
-                logger.error(f"Error inserting {tx_data.transaction_id}: {e}")
+                tx_id = (
+                    tx_data.get("transaction_id")
+                    if isinstance(tx_data, dict)
+                    else tx_data.transaction_id
+                )
+                logger.error(f"Error inserting {tx_id}: {e}")
                 # Rollback the failed transaction but continue with next
                 self.db.rollback()
 
@@ -169,6 +208,45 @@ class TransactionService:
                 raise PermissionError(f"Tenant isolation violation! Access denied.")
 
         return transactions
+
+    # ============================================================
+    # ✅ NEW: TOTAL COUNT METHOD (for correct pagination)
+    # ============================================================
+
+    def get_transaction_count(
+        self,
+        transaction_type: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        category: Optional[str] = None,
+        merchant: Optional[str] = None,
+    ) -> int:
+        """
+        Return total count of transactions matching filters (BEFORE pagination).
+
+        This is used by the API to return the real total, not just the page size.
+        """
+        query = self.db.query(func.count(Transaction.id)).filter(
+            Transaction.tenant_id == self.tenant_id
+        )
+
+        if transaction_type:
+            query = query.filter(Transaction.transaction_type == transaction_type)
+
+        if start_date:
+            query = query.filter(Transaction.date >= datetime.fromisoformat(start_date))
+
+        if end_date:
+            query = query.filter(Transaction.date <= datetime.fromisoformat(end_date))
+
+        if category:
+            query = query.filter(Transaction.category == category)
+
+        if merchant:
+            query = query.filter(Transaction.merchant == merchant)
+
+        result = query.scalar()
+        return int(result) if result is not None else 0
 
     def get_stats(self) -> StatsResponse:
         """Get transaction statistics - tenant isolated"""

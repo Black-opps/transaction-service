@@ -1,9 +1,10 @@
-﻿"""
+"""
 Transaction Service - Canonical Ledger
 """
 
 import logging
 import os
+from pathlib import Path
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -11,8 +12,7 @@ from dotenv import load_dotenv
 from .api.routes import router
 from .database.session import engine
 
-load_dotenv()
-
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 logging.basicConfig(
     level=getattr(logging, os.getenv("LOG_LEVEL", "INFO")),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",

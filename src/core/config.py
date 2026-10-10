@@ -9,9 +9,7 @@ class Settings:
     """Centralized configuration management"""
 
     # Database
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL", "postgresql://postgres:Playee103@localhost:5432/transaction_db"
-    )
+    DATABASE_URL: str = os.getenv("DATABASE_URL")
 
     # Service
     SERVICE_NAME: str = "transaction-service"

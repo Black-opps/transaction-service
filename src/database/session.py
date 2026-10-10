@@ -19,9 +19,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # Database configuration
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://postgres:Playee103@localhost:5432/transaction_db"
-)
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Pool configuration
 POOL_SIZE = int(os.getenv("DB_POOL_SIZE", 20))
